@@ -60,7 +60,7 @@ The architect agrees that the ADR needs clearer failure semantics, explicit busi
 
 **Decision: Accept with changes.**
 
-** vote:** 5–0 in favor of accepting the ADR subject to the required changes below. Replace this vote with the actual vote from your meeting.
+** vote:** 5–0 in favor of accepting the ADR subject to the required changes below.
 
 ## Required changes
 
