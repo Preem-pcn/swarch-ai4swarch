@@ -17,4 +17,4 @@ The agent writes a one-page ATAM-style review to [`outputs/3-review.md`](outputs
 
 **Don't act on the review yet.** Read it, commit it, and bring it to the review board in Part B. The board will decide which of its findings matter.
 
-- **My first impression of the AI's review** (one sentence): …
+- **My first impression of the AI's review** (one sentence): My first impression is that RabbitMQ is a reasonable choice for asynchronous post-order processing, but the ADR needs improvement because it does not fully address event loss, loyalty processing deadlines, and email backlogs, and some of its claims about RabbitMQ versus Kafka are inaccurate.

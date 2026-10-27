@@ -1,63 +1,89 @@
-**Language:** [ภาษาไทย](04-review-board.md) | English
+# Worksheet 04 — Architecture Review Board
 
-# Part B: Architecture review board (approximately 25 min, groups of 4)
 
-> **Lecture link:** AICH4 (reviews need domain expertise; *plausible ≠ appropriate*), Pillar 5 (AI as Chief Analyst, humans as Chief Strategist), JSS (85% of studies keep a human in the loop).
-> **Question:** what does a human review board catch that the AI's review missed, and why?
+## ADR under review
 
-The company's architecture review board meets to approve the R-12 design before the 11.11 sale. One ADR goes to the board: the **architect** presents it, the **AI analyst** presents the AI's review, and two stakeholders bring knowledge the AI never saw.
+- **ADR:** ADR-0002 — Publish an `OrderPlaced` event to RabbitMQ for post-order actions
+- **Author:** Pitchanan Thaiphayak
+- **Decision under review:** Use self-hosted RabbitMQ, an outbox, and independent consumers for post-order actions.
 
-## 1. Form the board (2 min)
+## Board members and roles
 
-In groups of 4, choose **one** member's ADR to review (`docs/adr/0002-*.md`, plus their `exercise/outputs/3-review.md`). Then assign roles:
-
-| Role | Who | Brings |
-|---|---|---|
-| **Architect** | the ADR's author | defends the ADR |
-| **AI analyst** | | reads out the AI's review only, and may not add their own opinions |
-| **Product owner** | | role card P (business side) |
-| **Site reliability engineer (SRE)** | | role card S (operations side) |
-
-Groups of 5 add a **security & privacy officer** (role card X). In groups of 3, the architect also plays the AI analyst.
-
-**Role cards** are in [`docs/review-board/`](../docs/review-board/README.en.md). Each stakeholder reads **only their own card** and keeps it secret until the meeting.
-
-## 2. Meeting (15 min)
-
-| Min | Step |
+| Role | Name |
 |---|---|
-| 3 | **Architect** presents the decision, the options considered and the main consequences |
-| 3 | **AI analyst** reads the AI review's findings and verdict, word for word |
-| 7 | **Open discussion.** Each stakeholder raises the concerns from their card, in their own words. The architect responds; anyone may ask the AI analyst "did the AI see this?" |
-| 2 | **Decision.** The board votes: accept / accept with changes / reject |
+| Architect (ADR author) | Pitchanan |
+| AI Analyst | Kotchapan |
+| Product Owner (PO) | Pon |
+| Site Reliability Engineer (SRE) | Piyapanchanok |
+| Security Officer | Chayutpong |
 
-## 3. Record the decision (8 min, together)
 
-**ADR reviewed:** `docs/adr/0002-…` by …
-**Board members and roles:** …
+### 1. Architect — Introduces the ADR
 
-**Decision:** accept / accept with changes / reject
+The architect explains that RabbitMQ decouples post-order actions from checkout. Email, loyalty, and analytics can be processed independently, and future consumers can be added without tightly coupling them to the order service.
 
-**Required changes:**
-1. …
-2. …
-3. …
+The architect acknowledges that the design still needs to clarify what happens if payment succeeds but the order event is not durably recorded. The architect also asks the board to consider whether the proposed design meets the loyalty latency target during broker outages.
 
-**Who raised what?** List every concern the board discussed.
+### 2. AI Analyst — Presents the AI review
 
-| # | Concern | Raised by (AI review / architect / PO / SRE / security) | Was it in the AI's review? | Could the AI have known? Why or why not? |
-|---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
-| 5 | | | | |
+The AI Analyst presents the review findings without adding personal opinions:
 
-**The AI's best finding** (one the humans had missed): …
-**The AI's weakest finding** (generic, wrong or irrelevant): …
+- The payment-to-outbox boundary may allow a successful payment to occur without a durable event.
+- The design needs clearer relay behavior, recovery guarantees, and handling of loyalty processing delays.
+- At peak load, email demand can exceed MailFast's throughput, creating a growing backlog.
+- Some claims comparing RabbitMQ with Kafka are not adequately supported.
+- The 30-minute peak example is an illustrative assumption, not a stated scenario requirement.
 
-## 4. Individual reflection (≤ 150 words, each student, after class is fine)
+### 3. Product Owner — Challenges business assumptions
 
-Write in [`05-reflection.md`](05-reflection.en.md): after Part A and Part B, which parts of an architect's work would you trust AI with, and which would you keep for humans? Use one concrete example from your board meeting.
+The PO asks whether customers and the business can tolerate delayed confirmation emails when order volume exceeds MailFast's limit. At 200 orders per second and a maximum email throughput of 50 per second, the backlog could grow by approximately 9,000 emails per minute if those rates persist.
 
-> Each group member commits this record to their own repository (copy the same text), so everyone submits a complete repo.
+The PO also questions how the one-minute loyalty requirement should be handled during a broker outage. The board needs an explicit business decision about acceptable delays and recovery expectations rather than assuming that asynchronous processing automatically meets the targets.
+
+### 4. SRE — Challenges reliability and operations
+
+The SRE asks how the outbox relay will run, how failures will be retried, and how duplicate messages will be handled. The SRE recommends documenting monitoring, alerting, queue-depth thresholds, dead-letter handling, and recovery procedures.
+
+The SRE also notes that the team must validate throughput and availability under realistic conditions. The ADR should not assume that the proposed broker and relay automatically satisfy the peak workload or loyalty latency target.
+
+### 5. Security Officer — Reviews security and privacy
+
+The Security Officer points out that queued events may contain customer email addresses and other order-related data. The ADR identifies personal data in queued events as an open question but does not yet define the necessary privacy and security controls.
+
+The Security Officer asks the team to specify which fields are required in events, who can publish and consume messages, how broker connections are authenticated and protected, and how long messages and dead-letter records are retained. Sensitive data should not remain in queues longer than necessary, and access to messages and operational logs should be restricted.
+
+### 6. Architect — Responds and summarizes changes
+
+The architect agrees that the ADR needs clearer failure semantics, explicit business acceptance criteria, and stronger security requirements. The architect proposes revising the ADR before implementation rather than treating the existing design as fully validated.
+
+##  decision
+
+**Decision: Accept with changes.**
+
+** vote:** 5–0 in favor of accepting the ADR subject to the required changes below. Replace this vote with the actual vote from your meeting.
+
+## Required changes
+
+1. **Clarify payment and outbox consistency.** Document the transaction boundaries between payment, order persistence, and event publication. Define recovery and reconciliation behavior if a failure occurs between these steps.
+2. **Specify delivery and recovery guarantees.** Document relay operation, retries, duplicate handling, dead-letter processing, monitoring, and recovery. Validate that the system can meet its workload and latency targets.
+3. **Define business-level service expectations.** Obtain agreement on acceptable email delays, backlog recovery, and the one-minute loyalty requirement during broker outages. Support broker comparisons with evidence rather than unsupported claims.
+4. **Add security and privacy requirements.** Minimize personal data in events; define broker authentication, authorization, connection protection, retention, and dead-letter queue access.
+5. **Validate the design before production.** Test peak throughput, broker outages, consumer failures, duplicate delivery, and recovery behavior.
+
+## Concerns raised
+
+| Concern | Raised by  | Covered by AI review? | Could AI have known? |
+|---|---|---|---|
+| Payment may succeed without a durable event | Architect and SRE | Yes | AI can infer the consistency risk from the documented transaction boundary; the correct recovery policy needs human agreement. |
+| Loyalty may miss its one-minute target during an outage | PO and SRE | Yes | AI can identify the conflict; business priorities and acceptable degradation require stakeholder decisions. |
+| Email backlog may grow at peak load | PO | Yes | AI can calculate the backlog rate; acceptable delay and peak duration need confirmation. |
+| Broker comparison claims may be unsupported | Architect | Yes | AI can flag unsupported statements and request evidence. |
+| Personal data may be exposed or retained in queues and dead-letter records | Security Officer | Not identified as a main finding in the review summary; the ADR does list privacy as an open question | AI could flag the open question and suggest controls, but the organization must define its security and privacy requirements. |
+
+## Best AI finding
+
+The payment-to-outbox consistency gap was a strong finding because it exposed a failure scenario that the architecture needs to address explicitly. It helped the board distinguish between having an outbox and guaranteeing that the payment and event workflows remain consistent.
+
+## Weakest AI finding
+
+The 30-minute peak example could be misleading if interpreted as a scenario requirement. The backlog calculation is useful, but the peak duration is an assumption and should be labeled as such.

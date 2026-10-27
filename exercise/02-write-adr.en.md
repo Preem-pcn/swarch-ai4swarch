@@ -33,10 +33,10 @@ requirement: <paste R-12 here>
 
 | Criterion | Run a | Run b |
 |---|---|---|
-| Uses the scenario's numbers (latency, peak, MailFast limits)? | | |
-| Options considered (list them) | | |
-| Handles "exactly once" loyalty points and MailFast's rate limit? How? | | |
-| Anything invented (a number, tool or fact not in the scenario)? | | |
+| Uses the scenario's numbers (latency, peak, MailFast limits)? | No. It acknowledges that latency targets, order volume, and MailFast's rate limit are unknown. | Yes. It uses the 500 ms checkout target, current ~300 ms latency, 200 orders/s peak, MailFast's 50 emails/s limit and latency, and the one-minute loyalty requirement. |
+| Options considered (list them) | Three: synchronous calls, message broker with pub/sub, and a dedicated post-order orchestrator. | Four: synchronous gRPC calls, in-process asynchronous goroutines, RabbitMQ, and Kafka. |
+| Handles "exactly once" loyalty points and MailFast's rate limit? How? | **Exactly once:** recommends idempotent consumers keyed by order ID, but doesn't specify the scenario's one-minute deadline or deeply define transactional deduplication. **Rate limit:** recommends retries with backoff, a dead-letter queue and alerts, but doesn't account for the 50/s cap or the 200 orders/s peak. | **Exactly once:** explains that delivery is at-least-once, while exactly-once points awarding is achieved through deduplication by `order_id` in the same transaction. It also calls out the one-minute target and dual-write risk. **Rate limit:** explicitly identifies the 4:1 mismatch, recommends buffering in a durable queue and limiting MailFast calls to 50/s, with shared rate limiting for retries and backoff on HTTP 429. |
+| Anything invented (a number, tool or fact not in the scenario)? | Assumes an existing synchronous email call and no existing broker, while acknowledging these aren't evidenced by the repository files available to the run. It also assumes the order of decision drivers. | Uses source code and scenario details, but still makes some assumptions: for example, HTTPS for MailFast, a three-node RabbitMQ cluster, and proposed service/database technologies that aren't specified by the scenario. It labels several inferences and leaves unresolved questions. |
 
 ## Take ownership: your final ADR
 
@@ -49,6 +49,8 @@ You will defend this ADR in front of a review board in Part B, so make sure you 
 
 | # | What you changed from the AI's draft | Why |
 |---|---|---|
-| 1 | | |
-| 2 | | |
-| 3 | | |
+| 1 | Added a transactional outbox (new order store + outbox relay) instead of publishing directly to RabbitMQ; updated the Decision, design rules, diagram, risks and open questions. | Losing the event after charging the customer could leave the order without a confirmation email or loyalty points. The event should be persisted reliably before asynchronous publishing. |
+| 2 | Documented the email delay as needing business approval and a delivery-time target. | At peak load, the system may accumulate around 9,000 emails per minute beyond MailFast's sending capacity. The business should approve the expected delay and define a delivery-time target. |
+| 3 | Kept RabbitMQ, and added when to reconsider Kafka. | The team already has experience with RabbitMQ and it is sufficient for the current post-order messaging requirements. Kafka should be reconsidered if future requirements make event replay, long-term retention, or stream processing important. |
+| 4 | Moved fraud scoring out of scope (removed it from "Future actions"). | Fraud decisions may need to happen before an order is accepted, unlike asynchronous post-order actions. It should have a separate architecture decision. |
+| 5 | Replaced the AI attribution with my name and added myself under Deciders. | I am responsible for reviewing and approving the final ADR. |
